@@ -146,7 +146,7 @@ function initFocusMode() {
   applyScrollFocus();
 }
 
-async function loadQuestions() {
+async function loadQuestions(savedAnswers = null) {
   try {
     questions = (await api('/api/questions')) || [];
     const form = document.getElementById('testForm');
@@ -161,6 +161,14 @@ async function loadQuestions() {
       startIndex += sectionQuestions.length;
       return html;
     }).join('') + renderSection('Other Questions', questions.filter(q => !sectionOrder.includes(q.section)), startIndex);
+    // Restore answers saved before a page reload
+    if (savedAnswers) {
+      savedAnswers.forEach(a => {
+        if (!a.selected_option) return;
+        const input = document.querySelector(`input[name="q_${a.question_id}"][value="${a.selected_option}"]`);
+        if (input) input.checked = true;
+      });
+    }
     updateAnsweredProgress();
     initFocusMode();
   } catch (err) {
@@ -238,9 +246,16 @@ async function submitTest(auto = false) {
 document.getElementById('submitBtn')?.addEventListener('click', () => submitTest(false));
 
 // Packages current answers and fires them via sendBeacon so delivery is
-// guaranteed even while the page is being torn down.  Only fires when
-// questions have loaded — if the participant exits before the question list
-// arrives there is nothing meaningful to record.
+// guaranteed even while the page is being torn down. Only fires when questions
+// have loaded — if the participant exits before the question list arrives there
+// is nothing meaningful to record.
+//
+// A sessionStorage checkpoint is saved BEFORE the beacon so that a reload can
+// detect what happened and cancel the submission via /api/cancel-submission.
+// sessionStorage survives reloads but is cleared on tab close, which is how
+// the reload vs. close distinction is made on the next page load.
+// localStorage is intentionally NOT cleared here — cleanup happens either at
+// the final explicit submit or when initTest detects a submitted status.
 function autoSubmitViaBeacon() {
   const participantId = Number(localStorage.getItem('participant_id'));
   if (!participantId || questions.length === 0) return;
@@ -248,15 +263,32 @@ function autoSubmitViaBeacon() {
     const sel = document.querySelector(`input[name="q_${q.id}"]:checked`);
     return { question_id: q.id, selected_option: sel ? sel.value : '' };
   });
+  sessionStorage.setItem('_testSession', JSON.stringify({ participantId, answers }));
   const payload = JSON.stringify({ participant_id: participantId, answers });
   if (navigator.sendBeacon) {
     navigator.sendBeacon('/api/submit-test', new Blob([payload], { type: 'application/json' }));
   } else {
-    // Fallback for browsers that don't support sendBeacon (very rare)
     fetch('/api/submit-test', { method: 'POST', body: payload, headers: { 'Content-Type': 'application/json' }, keepalive: true });
   }
-  localStorage.removeItem('participant_id');
-  localStorage.removeItem('test_start_time');
+}
+
+// Cancels an auto-submission made in the last 60 seconds. Retries up to 3 times
+// with a 400 ms gap to survive the race between the sendBeacon and this call.
+async function cancelAutoSubmit(participantId) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt > 0) await new Promise(r => setTimeout(r, 400));
+    try {
+      const res = await fetch('/api/cancel-submission', {
+        method: 'DELETE',
+        body: JSON.stringify({ participant_id: participantId }),
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+      });
+      const data = await res.json().catch(() => ({}));
+      if (data.cancelled) return true;
+    } catch { /* network error — retry */ }
+  }
+  return false;
 }
 
 // Warn before refresh / tab-close / navigation away while the test is active
@@ -274,14 +306,6 @@ window.addEventListener('pagehide', () => {
   if (!submitted) autoSubmitViaBeacon();
 });
 
-// Block F5 / Ctrl+R / Ctrl+Shift+R keyboard shortcuts directly
-document.addEventListener('keydown', e => {
-  if (submitted) return;
-  if (e.key === 'F5' || (e.ctrlKey && (e.key === 'r' || e.key === 'R'))) {
-    e.preventDefault();
-  }
-});
-
 (async function initTest() {
   const participantId = localStorage.getItem('participant_id');
 
@@ -289,6 +313,25 @@ document.addEventListener('keydown', e => {
   if (!participantId) {
     window.location.href = 'index.html';
     return;
+  }
+
+  // ── Reload recovery ────────────────────────────────────────────────────────
+  // pagehide fires on both reload and tab close. We distinguish them using
+  // sessionStorage: it survives a reload within the same tab but is wiped on
+  // close. If the checkpoint is present AND this is a reload, cancel the
+  // auto-submission that fired on the previous pagehide and restore answers.
+  const navType = performance.getEntriesByType?.('navigation')?.[0]?.type;
+  let savedAnswers = null;
+  const sessionRaw = sessionStorage.getItem('_testSession');
+  if (navType === 'reload' && sessionRaw) {
+    try {
+      const session = JSON.parse(sessionRaw);
+      if (session.participantId === Number(participantId)) {
+        await cancelAutoSubmit(session.participantId);
+        savedAnswers = session.answers;
+      }
+    } catch { /* malformed checkpoint — ignore */ }
+    sessionStorage.removeItem('_testSession');
   }
 
   // Check whether this participant has already submitted
@@ -340,6 +383,6 @@ document.addEventListener('keydown', e => {
     // Network error — fall through; startTimer() will use localStorage or start fresh
   }
 
-  loadQuestions();
+  loadQuestions(savedAnswers);
   startTimer();
 }());

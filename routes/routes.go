@@ -14,6 +14,7 @@ func RegisterRoutes(r *mux.Router) {
 	r.HandleFunc("/api/validate-passcode", handlers.ValidatePasscode).Methods("POST")
 	r.HandleFunc("/api/validate-cid", handlers.ValidateCID).Methods("POST")
 	r.HandleFunc("/api/start-test", handlers.StartTest).Methods("POST")
+	r.HandleFunc("/api/cancel-submission", handlers.CancelRecentSubmission).Methods("DELETE")
 	r.HandleFunc("/api/questions", handlers.GetQuestions).Methods("GET")
 	r.HandleFunc("/api/submit-test", handlers.SubmitTest).Methods("POST")
 	r.HandleFunc("/api/submission-status/{participantId}", handlers.CheckSubmission).Methods("GET")

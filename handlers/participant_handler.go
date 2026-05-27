@@ -46,6 +46,30 @@ func ValidatePasscode(w http.ResponseWriter, r *http.Request) {
 
 const testDurationSeconds = 3600
 
+// CancelRecentSubmission deletes a submission that was created within the last
+// 60 seconds for the given participant. Called by the test page on reload to
+// undo the automatic sendBeacon submission that fired on the previous pagehide.
+func CancelRecentSubmission(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ParticipantID int `json:"participant_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ParticipantID == 0 {
+		utils.Error(w, http.StatusBadRequest, "Participant ID is required")
+		return
+	}
+	result, err := config.DB.Exec(`
+		DELETE FROM submissions
+		WHERE participant_id = $1
+		  AND submitted_at > NOW() - INTERVAL '60 seconds'`,
+		req.ParticipantID)
+	if err != nil {
+		utils.Error(w, http.StatusInternalServerError, "Could not cancel submission")
+		return
+	}
+	n, _ := result.RowsAffected()
+	utils.JSON(w, http.StatusOK, map[string]bool{"cancelled": n > 0})
+}
+
 // StartTest records when a participant first opens the test and returns the
 // authoritative seconds_remaining so every device stays in sync.
 func StartTest(w http.ResponseWriter, r *http.Request) {
