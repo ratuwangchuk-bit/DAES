@@ -245,6 +245,10 @@ async function submitTest(auto = false) {
 
 document.getElementById('submitBtn')?.addEventListener('click', () => submitTest(false));
 
+// Prevent copying question content
+document.addEventListener('copy', e => { e.preventDefault(); });
+document.addEventListener('contextmenu', e => { e.preventDefault(); });
+
 // Packages current answers and fires them via sendBeacon so delivery is
 // guaranteed even while the page is being torn down. Only fires when questions
 // have loaded — if the participant exits before the question list arrives there
