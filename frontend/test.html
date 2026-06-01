@@ -55,9 +55,9 @@
       user-select: none;
     }
 
-    /* Screenshot shield overlay */
+    /* Screenshot shield — visible by default, hidden only while window has focus */
     #screenshotShield {
-      display: none;
+      display: flex;
       position: fixed;
       inset: 0;
       background: #0f172a;
@@ -67,7 +67,7 @@
       justify-content: center;
       gap: 1rem;
     }
-    #screenshotShield.active { display: flex; }
+    #screenshotShield.hidden { display: none; }
   </style>
 </head>
 
@@ -150,83 +150,61 @@
 
   <script>
     // Screenshot prevention
-    // Mac OS captures happen before JS can re-render, so the best defence is to
-    // keep the shield painted BEFORE the screenshot occurs — achieved by showing
-    // it on keydown AND on any focus/visibility loss (which Cmd+Shift+4/5 triggers).
+    // The shield is ALWAYS rendered (display:flex by default).
+    // It is only hidden (.hidden class) while the window actively has focus.
+    // This means any focus loss — which every Mac screenshot tool causes except
+    // Cmd+Shift+3 full-screen — instantly reveals the already-painted shield with
+    // zero render lag. Cmd+Shift+3 is caught via keydown as a best-effort fallback.
     (function () {
       const shield = document.getElementById('screenshotShield');
-      let hideTimer = null;
-
-      function showShield() {
-        clearTimeout(hideTimer);
-        shield.classList.add('active');
-      }
-
-      function hideShield(delay) {
-        clearTimeout(hideTimer);
-        hideTimer = setTimeout(() => shield.classList.remove('active'), delay || 2500);
-      }
-
       const isMac = /Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent);
 
-      // ── Keyboard intercept ───────────────────────────────────────────────────
+      function revealContent() {
+        shield.classList.add('hidden');
+      }
+
+      function blockContent() {
+        shield.classList.remove('hidden');
+      }
+
+      // Show content only while the window has focus and is visible
+      function syncShield() {
+        if (document.hasFocus() && !document.hidden) {
+          revealContent();
+        } else {
+          blockContent();
+        }
+      }
+
+      window.addEventListener('focus', syncShield);
+      window.addEventListener('blur', syncShield);
+      document.addEventListener('visibilitychange', syncShield);
+
+      // Keydown: best-effort for Cmd+Shift+3 (full-screen, no focus change on Mac)
+      // and PrintScreen on Windows — force-block synchronously then restore.
       document.addEventListener('keydown', function (e) {
-        // Windows / Linux: Print Screen (any combo)
-        if (e.key === 'PrintScreen') {
-          e.preventDefault();
-          showShield();
-          hideShield(2500);
-          return;
-        }
+        const isSS =
+          e.key === 'PrintScreen' ||
+          (isMac && e.metaKey && e.shiftKey && ['3', '4', '5', '6'].includes(e.key)) ||
+          (!isMac && e.metaKey && e.shiftKey && e.key.toLowerCase() === 's');
 
-        // Mac: Cmd+Shift+3 / 4 / 5 / 6
-        if (isMac && e.metaKey && e.shiftKey && ['3', '4', '5', '6'].includes(e.key)) {
+        if (isSS) {
           e.preventDefault();
-          showShield();
-          hideShield(2500);
-          return;
-        }
-
-        // Windows Snipping Tool: Win+Shift+S
-        if (!isMac && e.metaKey && e.shiftKey && e.key.toLowerCase() === 's') {
-          e.preventDefault();
-          showShield();
-          hideShield(2500);
+          blockContent();
+          setTimeout(syncShield, 2000);
         }
       });
 
-      // Some browsers only fire PrintScreen on keyup
       document.addEventListener('keyup', function (e) {
         if (e.key === 'PrintScreen') {
           e.preventDefault();
-          showShield();
-          hideShield(2500);
+          blockContent();
+          setTimeout(syncShield, 2000);
         }
       });
 
-      // ── Focus / visibility loss ──────────────────────────────────────────────
-      // Mac Cmd+Shift+4 (area select) and Cmd+Shift+5 (toolbar) steal window
-      // focus. Show the shield immediately so the captured frame is the shield.
-      window.addEventListener('blur', function () {
-        showShield();
-        // Restore after 3 s so a genuine alt-tab doesn't lock the user out forever.
-        hideShield(3000);
-      });
-
-      window.addEventListener('focus', function () {
-        // Small delay so the shield is still visible if the screenshot was taken
-        // right as the user refocused.
-        hideShield(800);
-      });
-
-      // Page hidden (e.g. screen-recording toolbar on Mac steals visibility)
-      document.addEventListener('visibilitychange', function () {
-        if (document.hidden) {
-          showShield();
-        } else {
-          hideShield(800);
-        }
-      });
+      // Initialise on load
+      syncShield();
     })();
   </script>
 </body>
