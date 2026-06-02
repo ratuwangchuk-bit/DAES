@@ -526,6 +526,212 @@ function downloadIndividualResult() {
   win.document.close();
 }
 
+/* ── Print All Results ─────────────────────────────────────── */
+
+function printAllResults() {
+  const results = [...allResults].sort((a, b) => (a.rank || 9999) - (b.rank || 9999));
+  if (!results.length) { alert('No results to print.'); return; }
+
+  const printDate = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' });
+  const topScore  = results[0]?.score ?? '—';
+  const avgScore  = results.length
+    ? (results.reduce((s, r) => s + (r.score || 0), 0) / results.length).toFixed(1)
+    : '—';
+
+  const rows = results.map((r, i) => {
+    const total = r.total_questions || 45;
+    const pct   = ((r.score / total) * 100).toFixed(1);
+    const pctN  = parseFloat(pct);
+    const scoreCol = pctN >= 70 ? '#15803d' : pctN >= 50 ? '#1d4ed8' : '#b91c1c';
+    return `<tr class="${i % 2 === 0 ? 'even' : 'odd'}">
+      <td class="c rank">${r.rank || '—'}</td>
+      <td class="c serial">${i + 1}</td>
+      <td class="name-cell"><b>${escapeHtml(r.full_name)}</b><br><span class="cid">${escapeHtml(r.cid_number || '—')}</span></td>
+      <td>${escapeHtml(r.company_name || '—')}</td>
+      <td>${escapeHtml(r.contact_number || '—')}</td>
+      <td class="c stotal" style="color:${scoreCol}">${r.score}/${total}</td>
+      <td class="c">${r.analytical_score}/15</td>
+      <td class="c">${r.verbal_score}/15</td>
+      <td class="c">${r.quantitative_score}/15</td>
+      <td class="c pct" style="color:${scoreCol}">${pct}%</td>
+    </tr>`;
+  }).join('');
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>HiPo Aptitude Test — All Results</title>
+<style>
+  @page {
+    size: A4 landscape;
+    margin: 32mm 12mm 24mm;
+  }
+  *  { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Helvetica, Arial, sans-serif; font-size: 11px; color: #0f172a; }
+
+  /* ── Page header – fixed, repeats on every printed page ── */
+  .pg-header {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    height: 30mm;
+    background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 58%, #0f766e 100%);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 14mm;
+    border-bottom: 3px solid #2dd4bf;
+  }
+  .pg-header .hl { }
+  .pg-header .hl .org-name {
+    font-size: 8.5px; font-weight: 800; text-transform: uppercase;
+    letter-spacing: .14em; color: #2dd4bf; margin-bottom: 4px;
+  }
+  .pg-header .hl .test-title {
+    font-size: 18px; font-weight: 900; color: #ffffff; line-height: 1;
+  }
+  .pg-header .hm {
+    text-align: center; flex: 1; padding: 0 10mm;
+  }
+  .pg-header .hm .badge {
+    display: inline-block; border: 1px solid rgba(255,255,255,.25);
+    border-radius: 6px; padding: 5px 14px;
+    font-size: 8.5px; font-weight: 800; text-transform: uppercase;
+    letter-spacing: .1em; color: rgba(255,255,255,.7);
+    background: rgba(255,255,255,.07);
+  }
+  .pg-header .hr { text-align: right; }
+  .pg-header .hr .lbl {
+    font-size: 8px; color: rgba(255,255,255,.45);
+    text-transform: uppercase; letter-spacing: .09em; display: block; margin-bottom: 3px;
+  }
+  .pg-header .hr .val { font-size: 10.5px; color: rgba(255,255,255,.85); font-weight: 700; }
+
+  /* ── Page footer – fixed, repeats on every printed page ── */
+  .pg-footer {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    height: 22mm;
+    border-top: 1.5px solid #e2e8f0;
+    background: #f8fafc;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 14mm;
+  }
+  .pg-footer .fc { font-size: 8.5px; color: #475569; font-weight: 700; }
+  .pg-footer .fr { font-size: 8px; color: #94a3b8; text-align: right; }
+
+  /* ── Intro summary ── */
+  .intro {
+    margin-bottom: 14px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid #e2e8f0;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .intro-left .doc-title   { font-size: 14px; font-weight: 900; margin-bottom: 3px; }
+  .intro-left .doc-sub     { font-size: 9.5px; color: #64748b; line-height: 1.5; }
+  .intro-stats { display: flex; gap: 1px; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; flex-shrink: 0; }
+  .istat {
+    text-align: center; padding: 8px 16px; background: #f8fafc; border-right: 1px solid #e2e8f0;
+  }
+  .istat:last-child { border-right: none; }
+  .istat .lbl { font-size: 7.5px; text-transform: uppercase; letter-spacing: .07em; color: #94a3b8; display: block; margin-bottom: 3px; }
+  .istat .val { font-size: 16px; font-weight: 900; color: #1e3a8a; }
+
+  /* ── Result table ── */
+  table { width: 100%; border-collapse: collapse; font-size: 10.5px; }
+  thead { display: table-header-group; }
+  thead tr { background: #1e3a8a; }
+  th {
+    padding: 7px 8px; text-align: left; font-size: 8px; font-weight: 800;
+    text-transform: uppercase; letter-spacing: .07em; color: #fff;
+    white-space: nowrap; border: none;
+  }
+  th.c { text-align: center; }
+  td { padding: 5px 8px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+  tr.even td { background: #ffffff; }
+  tr.odd  td { background: #f8fafc; }
+  .c      { text-align: center; }
+  .rank   { font-weight: 900; color: #7c3aed; font-size: 13px; }
+  .serial { color: #94a3b8; font-weight: 700; }
+  .name-cell b   { font-size: 11px; font-weight: 800; }
+  .name-cell .cid { font-size: 8.5px; color: #94a3b8; }
+  .stotal { font-weight: 900; font-size: 12px; }
+  .pct    { font-weight: 800; }
+</style>
+</head>
+<body>
+
+  <!-- Repeating page header -->
+  <div class="pg-header">
+    <div class="hl">
+      <div class="org-name">DHI Group of Company</div>
+      <div class="test-title">HiPo Aptitude Test</div>
+    </div>
+    <div class="hm">
+      <span class="badge">All Participants · Results Report</span>
+    </div>
+    <div class="hr">
+      <span class="lbl">Date Printed</span>
+      <span class="val">${printDate}</span>
+    </div>
+  </div>
+
+  <!-- Repeating page footer -->
+  <div class="pg-footer">
+    <span class="fc">Confidential &mdash; For Internal Use Only &nbsp;&middot;&nbsp; DHI Group of Company</span>
+    <span class="fr">HiPo Aptitude Test &nbsp;&middot;&nbsp; ${printDate}</span>
+  </div>
+
+  <!-- Intro summary block -->
+  <div class="intro">
+    <div class="intro-left">
+      <div class="doc-title">Final Result Summary &mdash; All Participants</div>
+      <div class="doc-sub">
+        Sections: Analytical Ability &nbsp;&middot;&nbsp; Verbal Ability &nbsp;&middot;&nbsp; Quantitative Skills<br>
+        45 Questions &nbsp;&middot;&nbsp; 1 Mark Per Question &nbsp;&middot;&nbsp; No Negative Marking &nbsp;&middot;&nbsp; Ranked by Total Score
+      </div>
+    </div>
+    <div class="intro-stats">
+      <div class="istat"><span class="lbl">Participants</span><span class="val">${results.length}</span></div>
+      <div class="istat"><span class="lbl">Max Score</span><span class="val">45</span></div>
+      <div class="istat"><span class="lbl">Top Score</span><span class="val">${topScore}</span></div>
+      <div class="istat"><span class="lbl">Avg Score</span><span class="val">${avgScore}</span></div>
+    </div>
+  </div>
+
+  <!-- Results table -->
+  <table>
+    <thead>
+      <tr>
+        <th class="c">Rank</th>
+        <th class="c">No.</th>
+        <th>Name &amp; CID</th>
+        <th>Company</th>
+        <th>Contact</th>
+        <th class="c">Total<br>/45</th>
+        <th class="c">Analytical<br>/15</th>
+        <th class="c">Verbal<br>/15</th>
+        <th class="c">Quantitative<br>/15</th>
+        <th class="c">Score %</th>
+      </tr>
+    </thead>
+    <tbody>${rows}</tbody>
+  </table>
+
+  <script>window.onload = () => { window.print(); }<\/script>
+</body>
+</html>`;
+
+  const win = window.open('', '_blank');
+  win.document.write(html);
+  win.document.close();
+}
+
 /* ── Passcodes ─────────────────────────────────────────────── */
 
 function renderPasscodes(rows) {
