@@ -567,7 +567,7 @@ function printAllResults() {
     size: A4 landscape;
     margin: 32mm 12mm 24mm;
   }
-  *  { box-sizing: border-box; margin: 0; padding: 0; }
+  *  { box-sizing: border-box; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   body { font-family: Helvetica, Arial, sans-serif; font-size: 11px; color: #0f172a; }
 
   /* ── Page header – fixed, repeats on every printed page ── */
