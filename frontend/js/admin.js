@@ -544,7 +544,6 @@ function printAllResults() {
     const pctN  = parseFloat(pct);
     const scoreCol = pctN >= 70 ? '#15803d' : pctN >= 50 ? '#1d4ed8' : '#b91c1c';
     return `<tr class="${i % 2 === 0 ? 'even' : 'odd'}">
-      <td class="c rank">${r.rank || '—'}</td>
       <td class="c serial">${i + 1}</td>
       <td class="name-cell"><b>${escapeHtml(r.full_name)}</b><br><span class="cid">${escapeHtml(r.cid_number || '—')}</span></td>
       <td>${escapeHtml(r.company_name || '—')}</td>
@@ -652,6 +651,22 @@ function printAllResults() {
     white-space: nowrap; border: none;
   }
   th.c { text-align: center; }
+  .tbl-caption {
+    background: #0f172a;
+    padding: 8px 10px 7px;
+    border-bottom: 2px solid #2dd4bf;
+    text-align: left;
+  }
+  .tbl-caption-title {
+    display: block;
+    font-size: 10px; font-weight: 900; text-transform: none;
+    letter-spacing: .01em; color: #ffffff; margin-bottom: 2px;
+  }
+  .tbl-caption-sub {
+    display: block;
+    font-size: 7.5px; font-weight: 600; text-transform: none;
+    letter-spacing: .01em; color: rgba(255,255,255,.5);
+  }
   td { padding: 5px 8px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
   tr.even td { background: #ffffff; }
   tr.odd  td { background: #f8fafc; }
@@ -708,8 +723,13 @@ function printAllResults() {
   <table>
     <thead>
       <tr>
-        <th class="c">Rank</th>
-        <th class="c">No.</th>
+        <th colspan="9" class="tbl-caption">
+          <span class="tbl-caption-title">Participant Results &mdash; Ranked by Total Score</span>
+          <span class="tbl-caption-sub">45 Questions &nbsp;&middot;&nbsp; Sections: Analytical / Verbal / Quantitative &nbsp;&middot;&nbsp; 1 Mark Each &nbsp;&middot;&nbsp; No Negative Marking</span>
+        </th>
+      </tr>
+      <tr>
+        <th class="c">SL No.</th>
         <th>Name &amp; CID</th>
         <th>Company</th>
         <th>Contact</th>
