@@ -274,7 +274,7 @@ textarea.input {
 table.modern-table { width: 100%; border-collapse: collapse; font-size: .9rem; }
 .modern-table thead     { background: #f8fafc; color: #475569; }
 .modern-table th        { text-align: left; padding: .9rem 1rem; font-size: .76rem; text-transform: uppercase; letter-spacing: .055em; white-space: nowrap; }
-.modern-table td        { padding: .95rem 1rem; border-top: 1px solid #e2e8f0; vertical-align: top; color: #334155; }
+.modern-table td        { padding: .95rem 1rem; border-top: 1px solid #e2e8f0; vertical-align: middle; color: #334155; }
 .modern-table tbody tr  { transition: background .14s ease; }
 .modern-table tbody tr:hover { background: #f8fafc; }
 
@@ -290,7 +290,7 @@ table.modern-table { width: 100%; border-collapse: collapse; font-size: .9rem; }
 
 /* ── Pills & badges ────────────────────────────────────────── */
 /* Used heavily inside JS-rendered table rows */
-.pill       { display: inline-flex; align-items: center; gap: .35rem; padding: .38rem .65rem; border-radius: 999px; background: #eef2ff; color: #3730a3; font-weight: 900; font-size: .78rem; }
+.pill       { display: inline-flex; align-items: center; gap: .35rem; padding: .38rem .65rem; border-radius: 999px; background: #eef2ff; color: #3730a3; font-weight: 900; font-size: .78rem; white-space: nowrap; }
 .pill-green { background: #dcfce7; color: #166534; }
 .pill-red   { background: #fee2e2; color: #991b1b; }
 .pill-teal  { background: #ccfbf1; color: #115e59; }
