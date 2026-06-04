@@ -278,6 +278,41 @@ table.modern-table { width: 100%; border-collapse: collapse; font-size: .9rem; }
 .modern-table tbody tr  { transition: background .14s ease; }
 .modern-table tbody tr:hover { background: #f8fafc; }
 
+/* Question bank — section header rows */
+.modern-table tr.q-section-header td {
+  background: #f1f5f9;
+  border-top: 2px solid #e2e8f0;
+  padding: .5rem 1rem;
+  font-size: .68rem; font-weight: 900;
+  text-transform: uppercase; letter-spacing: .1em;
+  color: #475569;
+}
+.modern-table tr.q-section-header td span {
+  font-weight: 600; color: #94a3b8;
+  text-transform: none; letter-spacing: 0;
+}
+/* Expanded options panel inside a question row */
+.q-bank-opts {
+  margin-top: .65rem;
+  display: grid; grid-template-columns: 1fr 1fr; gap: .35rem .75rem;
+  background: #f8fafc; border: 1px solid #e2e8f0;
+  border-radius: .6rem; padding: .65rem .85rem;
+}
+.q-bank-opts.hidden { display: none; }
+.q-bank-opt-item {
+  display: flex; align-items: baseline; gap: .4rem;
+  font-size: .82rem; color: #475569;
+}
+.q-bank-opt-badge {
+  flex-shrink: 0; width: 1.3rem; height: 1.3rem;
+  border-radius: .3rem; background: #e0e7ff; color: #3730a3;
+  font-size: .65rem; font-weight: 900;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+/* Chevron rotates when expanded */
+.q-chevron { transition: transform .18s; }
+.q-chevron.open { transform: rotate(180deg); }
+
 /* Result table — centred layout with colour-coded section headers */
 .result-table thead th { text-align: center; color: #575a71; font-size: .86rem; letter-spacing: .16em; border-right: 1px solid #e5e7eb; background: #ffffff; }
 .result-table thead th span { display: inline-block; color: #2563eb; font-size: .72rem; letter-spacing: .22em; margin-top: .22rem; }

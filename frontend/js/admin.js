@@ -838,6 +838,12 @@ async function copyPasscode(code) {
 /* ── Questions ─────────────────────────────────────────────── */
 
 // Super admins see a checkbox column, Edit and Delete buttons; general admins see read-only.
+const Q_SECTION_META = [
+  { key: 'Analytical Ability',  label: 'Section A · Analytical Ability',  letter: 'A' },
+  { key: 'Verbal Ability',      label: 'Section B · Verbal Ability',       letter: 'B' },
+  { key: 'Quantitative Skills', label: 'Section C · Quantitative Skills',  letter: 'C' },
+];
+
 function renderQuestions(rows) {
   const tbody = document.getElementById('questionsTable');
   if (!tbody) return;
@@ -858,23 +864,77 @@ function renderQuestions(rows) {
     el.title = count < 15 ? 'Warning: fewer than 15 questions — participants will see all of them' : '';
   };
   warn(elA, countA); warn(elB, countB); warn(elC, countC);
-  tbody.innerHTML = rows.length
-    ? rows.map(q => `
+
+  const cols = isSuperAdmin() ? 5 : 3;
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="${cols}" class="text-center text-slate-500 py-8">No questions found.</td></tr>`;
+    return;
+  }
+
+  // Group rows by section preserving canonical order.
+  const grouped = Object.fromEntries(Q_SECTION_META.map(s => [s.key, []]));
+  rows.forEach(q => { if (grouped[q.section]) grouped[q.section].push(q); });
+
+  const chevronSvg = `<svg class="q-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="6 9 12 15 18 9"/></svg>`;
+
+  let html = '';
+  let num  = 1;
+
+  Q_SECTION_META.forEach(({ key, label, letter }) => {
+    const qs = grouped[key];
+    if (!qs.length) return;
+
+    // Section header row spanning all columns.
+    html += `<tr class="q-section-header">
+      <td colspan="${cols}">
+        ${label}
+        <span>&nbsp;—&nbsp; ${qs.length} question${qs.length !== 1 ? 's' : ''} in bank &nbsp;·&nbsp; 15 randomly shown per participant</span>
+      </td>
+    </tr>`;
+
+    qs.forEach(q => {
+      const n = num++;
+      html += `
         <tr>
-          ${isSuperAdmin() ? `<td class="text-center"><input type="checkbox" class="question-checkbox" data-id="${q.id}" ${selectedQuestionIds.has(q.id) ? 'checked' : ''} onchange="toggleQuestionSelection(${q.id}, this)"></td>` : ''}
-          <td><span class="pill">${q.id}</span></td>
-          <td><span class="pill pill-teal">${escapeHtml(SECTION_SHORT[q.section] || q.section || '-')}</span></td>
-          <td class="min-w-[260px]"><b>${escapeHtml(q.question_text)}</b></td>
-          <td>${escapeHtml(q.option_a)}</td>
-          <td>${escapeHtml(q.option_b)}</td>
-          <td>${escapeHtml(q.option_c)}</td>
-          <td>${escapeHtml(q.option_d)}</td>
-          ${isSuperAdmin() ? `<td><div class="flex gap-2">
-            <button class="btn-icon btn-warning" title="Edit"   onclick="editQuestion(${q.id})">${ICON.edit}</button>
-            <button class="btn-icon btn-danger"  title="Delete" onclick="deleteQuestion(${q.id})">${ICON.trash}</button>
-          </div></td>` : ''}
-        </tr>`).join('')
-    : `<tr><td colspan="${isSuperAdmin() ? 9 : 7}" class="text-center text-slate-500 py-8">No questions found.</td></tr>`;
+          ${isSuperAdmin() ? `<td class="text-center">
+            <input type="checkbox" class="question-checkbox" data-id="${q.id}"
+              ${selectedQuestionIds.has(q.id) ? 'checked' : ''}
+              onchange="toggleQuestionSelection(${q.id}, this)">
+          </td>` : ''}
+          <td><span class="pill">${n}</span></td>
+          <td><span class="pill pill-teal">${escapeHtml(letter)}</span></td>
+          <td>
+            <div style="font-weight:700; color:#1e293b; line-height:1.5; cursor:pointer;"
+                 onclick="toggleQOptions(${q.id})">${escapeHtml(q.question_text)}</div>
+            <div class="q-bank-opts hidden" id="qopts_${q.id}">
+              <div class="q-bank-opt-item"><span class="q-bank-opt-badge">A</span>${escapeHtml(q.option_a)}</div>
+              <div class="q-bank-opt-item"><span class="q-bank-opt-badge">B</span>${escapeHtml(q.option_b)}</div>
+              <div class="q-bank-opt-item"><span class="q-bank-opt-badge">C</span>${escapeHtml(q.option_c)}</div>
+              <div class="q-bank-opt-item"><span class="q-bank-opt-badge">D</span>${escapeHtml(q.option_d)}</div>
+            </div>
+          </td>
+          ${isSuperAdmin() ? `<td>
+            <div class="flex gap-1.5 items-center">
+              <button class="btn-icon" id="qchevron_${q.id}" title="Show options" onclick="toggleQOptions(${q.id})">${chevronSvg}</button>
+              <button class="btn-icon btn-warning" title="Edit"   onclick="editQuestion(${q.id})">${ICON.edit}</button>
+              <button class="btn-icon btn-danger"  title="Delete" onclick="deleteQuestion(${q.id})">${ICON.trash}</button>
+            </div>
+          </td>` : ''}
+        </tr>`;
+    });
+  });
+
+  tbody.innerHTML = html;
+}
+
+function toggleQOptions(id) {
+  const panel   = document.getElementById(`qopts_${id}`);
+  const chevron = document.querySelector(`#qchevron_${id} .q-chevron`);
+  if (!panel) return;
+  const nowHidden = panel.classList.toggle('hidden');
+  if (chevron) chevron.classList.toggle('open', !nowHidden);
 }
 
 function toggleQuestionSelection(id, el) {
