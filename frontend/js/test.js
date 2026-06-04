@@ -1,19 +1,19 @@
-let questions = [];
-let submitted = false;
-const DURATION = 60 * 60; // Total test duration in seconds (60 minutes).
+let questions           = [];
+let submitted           = false;
+let currentQuestionIdx  = 0;
+const selectedAnswers   = {}; // { [question_id]: 'A'|'B'|'C'|'D' } — survives question navigation
+const DURATION          = 60 * 60; // Total test duration in seconds (60 minutes).
 
 // ── Single-tab enforcement ─────────────────────────────────────────────────────
 // Only one browser tab per participant may hold the test open at a time.
 // A BroadcastChannel allows tabs on the same origin to message each other.
 // When a new tab opens it broadcasts a "check" message; if an existing active tab
 // responds with "active", the new tab knows it is a duplicate and blocks itself.
-// BroadcastChannel closes automatically on page unload so no manual cleanup is needed.
 const _tabChannel = typeof BroadcastChannel !== 'undefined'
   ? new BroadcastChannel('daes_test_tab')
   : null;
 let _isActiveTab = false;
 
-// Answer any incoming "check" broadcast while this tab is the active one.
 _tabChannel?.addEventListener('message', e => {
   if (e.data.type === 'check' && _isActiveTab) {
     _tabChannel.postMessage({ type: 'active' });
@@ -22,13 +22,10 @@ _tabChannel?.addEventListener('message', e => {
 
 /**
  * Attempts to claim the single-tab lock for this participant.
- * Returns a Promise that resolves to true if no other tab is running the test,
- * or false if another tab already responded "active" within 150 ms.
- * The 150 ms window is long enough for a same-device tab to reply but short
- * enough that a normal page load does not feel sluggish.
+ * Resolves true if no other tab responded "active" within 150 ms.
  */
 function acquireTabLock() {
-  if (!_tabChannel) return Promise.resolve(true); // No BroadcastChannel — allow.
+  if (!_tabChannel) return Promise.resolve(true);
   return new Promise(resolve => {
     let denied = false;
     const onReply = e => {
@@ -40,7 +37,6 @@ function acquireTabLock() {
     };
     _tabChannel.addEventListener('message', onReply);
     _tabChannel.postMessage({ type: 'check' });
-    // If no active tab replies within 150 ms, this tab wins the lock.
     setTimeout(() => {
       _tabChannel.removeEventListener('message', onReply);
       if (!denied) { _isActiveTab = true; resolve(true); }
@@ -48,196 +44,264 @@ function acquireTabLock() {
   });
 }
 
-// Canonical order of sections as they appear on the test form.
+// Canonical section order and display metadata.
 const sectionOrder = ['Analytical Ability', 'Verbal Ability', 'Quantitative Skills'];
 
-// Human-readable labels shown in the section banner inside the test form.
-const sectionLabels = {
-  'Analytical Ability':  'Section A: Analytical Ability',
-  'Verbal Ability':      'Section B: Verbal Ability',
-  'Quantitative Skills': 'Section C: Quantitative Skills',
+const sectionLetters = {
+  'Analytical Ability':  'A',
+  'Verbal Ability':      'B',
+  'Quantitative Skills': 'C',
 };
 
+const sectionTabLabels = {
+  'Analytical Ability':  'Analytical Ability',
+  'Verbal Ability':      'Verbal Ability',
+  'Quantitative Skills': 'Quantitative Skills',
+};
+
+/* ── Progress tracking ─────────────────────────────────────────────────────── */
+
 /**
- * Counts how many questions have a selected answer and updates the progress bar,
- * the "X/45 answered" counter, and the submit button's enabled/disabled state.
- * Called whenever a radio button changes.
+ * Counts answered questions from selectedAnswers (not the DOM, since only one
+ * question is rendered at a time). Updates the topbar counter, progress bar,
+ * and submit button, then refreshes the sidebar and section tab indicators.
  */
 function updateAnsweredProgress() {
-  const answered = questions.filter(q => document.querySelector(`input[name="q_${q.id}"]:checked`)).length;
+  const answered = questions.filter(q => selectedAnswers[q.id]).length;
   const total    = questions.length;
 
-  const answeredCount = document.getElementById('answeredCount');
-  const progressBar   = document.getElementById('progressBar');
-  const submitBtn     = document.getElementById('submitBtn');
+  const answeredEl  = document.getElementById('answeredCount');
+  const progressBar = document.getElementById('progressBar');
+  const submitBtn   = document.getElementById('submitBtn');
 
-  if (answeredCount) answeredCount.textContent = `${answered}/${total}`;
-  if (progressBar)   progressBar.style.width = total ? `${(answered / total) * 100}%` : '0%';
+  if (answeredEl)  answeredEl.textContent = `${answered}/${total}`;
+  if (progressBar) progressBar.style.width = total ? `${(answered / total) * 100}%` : '0%';
 
   if (submitBtn) {
     const allDone = total > 0 && answered === total;
     submitBtn.disabled = !allDone;
-    submitBtn.classList.toggle('opacity-40',       !allDone);
+    submitBtn.classList.toggle('opacity-40',        !allDone);
     submitBtn.classList.toggle('cursor-not-allowed', !allDone);
   }
+
+  updateSidebarButtons();
+  updateSectionTabs();
+}
+
+/* ── Sidebar + section tab bar ─────────────────────────────────────────────── */
+
+/**
+ * Builds the left sidebar (question number grid per section) and the section
+ * tab bar (A / B / C with answered/total counts). Called once after questions load.
+ */
+function buildSidebarAndTabs() {
+  const sidebar = document.getElementById('testSidebar');
+  const tabBar  = document.getElementById('testSectionBar');
+  if (!sidebar || !tabBar) return;
+
+  let globalIdx = 0;
+  let tabsHtml  = '';
+  let sideHtml  = '';
+
+  sectionOrder.forEach(section => {
+    const sq     = questions.filter(q => q.section === section);
+    if (!sq.length) return;
+    const letter = sectionLetters[section] || '?';
+
+    tabsHtml += `
+      <button class="tab-btn" id="tabBtn_${letter}"
+              onclick="jumpToSection('${section}')">
+        ${letter} &middot; ${sectionTabLabels[section] || section}
+        <span class="tab-score" id="tabScore_${letter}">0/${sq.length}</span>
+      </button>`;
+
+    sideHtml += `<p class="sb-label">Section ${letter}</p><div class="sb-grid">`;
+    sq.forEach((q, li) => {
+      sideHtml += `<button class="sb-q" id="sbq_${globalIdx}" onclick="goToQuestion(${globalIdx})">${li + 1}</button>`;
+      globalIdx++;
+    });
+    sideHtml += '</div>';
+  });
+
+  tabBar.innerHTML  = tabsHtml;
+  sidebar.innerHTML = sideHtml;
 }
 
 /**
- * Renders the HTML for one section of the test form.
- * Questions are numbered globally (startIndex + localIndex + 1) so numbering
- * is continuous across sections (Q1–Q15, Q16–Q30, Q31–Q45).
+ * Repaints every sidebar button: current = orange, answered = blue, else default.
  */
-function renderSection(section, sectionQuestions, startIndex) {
-  if (!sectionQuestions.length) return '';
-  return `
-    <section class="space-y-5">
-      <div class="section-banner">
-        <div>
-          <p class="text-xs uppercase tracking-[0.25em] font-black text-blue-600">${escapeHtml(sectionLabels[section] || section)}</p>
-          <h2 class="text-xl sm:text-2xl font-black mt-1">${escapeHtml(section)}</h2>
-        </div>
-        <span class="pill">${sectionQuestions.length} Questions</span>
-      </div>
-      ${sectionQuestions.map((q, localIndex) => {
-        const globalIndex = startIndex + localIndex + 1;
-        return `
-        <div class="card question-card p-5 sm:p-6 card-hover">
-          <div class="flex items-start gap-3">
-            <span class="pill">Q${globalIndex}</span>
-            <p class="font-black text-lg leading-relaxed">${escapeHtml(q.question_text)}</p>
-          </div>
-          <div class="grid sm:grid-cols-2 gap-3 mt-5">
-            ${['A','B','C','D'].map(opt => {
-              const text = q['option_' + opt.toLowerCase()];
-              return `<label class="option-tile"><input type="radio" name="q_${q.id}" value="${opt}" onchange="updateAnsweredProgress()"><span><b>${opt}.</b> ${escapeHtml(text)}</span></label>`;
-            }).join('')}
-          </div>
-        </div>`;
-      }).join('')}
-    </section>`;
+function updateSidebarButtons() {
+  questions.forEach((q, gi) => {
+    const btn = document.getElementById(`sbq_${gi}`);
+    if (!btn) return;
+    const isCurrent  = gi === currentQuestionIdx;
+    const isAnswered = Boolean(selectedAnswers[q.id]);
+    btn.className = 'sb-q' + (isCurrent ? ' sq-current' : isAnswered ? ' sq-answered' : '');
+  });
 }
 
 /**
- * Focus mode: blurs all question cards except the one nearest the viewport
- * midpoint, so the participant can concentrate on the current question.
- *
- * Special case at the page bottom: the last card can never scroll to the
- * vertical midpoint of the viewport, so we relax the rule — any card still
- * visible on screen is un-blurred so the second-to-last question never stays
- * blurred when the participant is viewing the end of the test.
+ * Updates the per-section answered/total scores in the tab bar and highlights
+ * the tab that owns the currently visible question.
  */
-function initFocusMode() {
+function updateSectionTabs() {
+  const activeSection = questions[currentQuestionIdx]?.section;
+
+  sectionOrder.forEach(section => {
+    const letter = sectionLetters[section];
+    const sq     = questions.filter(q => q.section === section);
+    const done   = sq.filter(q => selectedAnswers[q.id]).length;
+
+    const scoreEl = document.getElementById(`tabScore_${letter}`);
+    if (scoreEl) scoreEl.textContent = `${done}/${sq.length}`;
+
+    const tabEl = document.getElementById(`tabBtn_${letter}`);
+    if (tabEl) tabEl.classList.toggle('tab-active', section === activeSection);
+  });
+}
+
+/* ── Question display ──────────────────────────────────────────────────────── */
+
+/**
+ * Renders question at global index `idx` into the question panel.
+ * Reads the saved answer from `selectedAnswers` so the tile is pre-selected
+ * when the participant navigates back to a previously answered question.
+ */
+function showQuestion(idx) {
+  if (idx < 0 || idx >= questions.length) return;
+  currentQuestionIdx = idx;
+
+  const q          = questions[idx];
+  const section    = q.section || 'Other';
+  const letter     = sectionLetters[section] || '';
+  const badgeLabel = letter ? `Section ${letter}  ·  ${section}` : section;
+
+  const sectionQs = questions.filter(sq => sq.section === section);
+  const localIdx  = sectionQs.indexOf(q);
+  const saved     = selectedAnswers[q.id] || '';
+
   const form = document.getElementById('testForm');
-  const mid  = () => window.innerHeight / 2;
+  if (!form) return;
 
-  function applyScrollFocus() {
-    const cards   = Array.from(form.querySelectorAll('.question-card'));
-    const viewMid = mid();
-    // "At bottom" threshold: within 80 px of the page's furthest scrollable point.
-    const atBottom = document.documentElement.scrollHeight - window.scrollY - window.innerHeight < 80;
+  form.innerHTML = `
+    <div class="q-section-badge">
+      <span class="q-badge-dot"></span>
+      ${escapeHtml(badgeLabel)}
+    </div>
+    <p class="q-meta">
+      <span>Question ${localIdx + 1} of ${sectionQs.length}</span>
+      <span class="sep">|</span>
+      <span>Overall ${idx + 1} of ${questions.length}</span>
+    </p>
+    <div class="q-text-card">${escapeHtml(q.question_text)}</div>
+    <div class="q-options">
+      ${['A','B','C','D'].map(opt => {
+        const text   = q['option_' + opt.toLowerCase()];
+        const selCls = saved === opt ? ' q-selected' : '';
+        return `
+          <label class="q-opt${selCls}" id="qopt_${q.id}_${opt}"
+                 onclick="onOptionChange(${q.id},'${opt}')">
+            <span class="q-opt-badge">${opt}</span>
+            <span>${escapeHtml(text)}</span>
+          </label>`;
+      }).join('')}
+    </div>
+    <div class="q-nav">
+      <button class="q-nav-btn" onclick="goToQuestion(${idx - 1})" ${idx === 0 ? 'disabled' : ''}>
+        &#8592; Previous
+      </button>
+      <button class="q-nav-btn q-next" onclick="goToQuestion(${idx + 1})"
+              ${idx === questions.length - 1 ? 'disabled' : ''}>
+        Next &#8594;
+      </button>
+    </div>`;
 
-    // Collect cards that are at least partially in the viewport.
-    const visible = cards.filter(card => {
-      const r = card.getBoundingClientRect();
-      return r.top < window.innerHeight && r.bottom > 0;
-    });
+  // Scroll the question panel back to the top when switching questions.
+  document.querySelector('.test-q-panel')?.scrollTo({ top: 0, behavior: 'smooth' });
 
-    let focused = null;
-    if (visible.length) {
-      if (atBottom) {
-        // At the bottom the last visible card is focused because it cannot
-        // reach the midpoint by scrolling.
-        focused = visible[visible.length - 1];
-      } else {
-        // Pick the visible card whose centre is closest to the viewport midpoint.
-        let minDist = Infinity;
-        visible.forEach(card => {
-          const r    = card.getBoundingClientRect();
-          const dist = Math.abs((r.top + r.bottom) / 2 - viewMid);
-          if (dist < minDist) { minDist = dist; focused = card; }
-        });
-      }
-    }
-
-    const visibleSet = new Set(visible);
-    cards.forEach(card => {
-      if (focused) {
-        card.classList.toggle('q-focused', card === focused);
-        // At the bottom edge, visible-but-not-focused cards are kept unblurred
-        // so participants can still see adjacent questions clearly.
-        card.classList.toggle('q-blurred', card !== focused && (!atBottom || !visibleSet.has(card)));
-      } else {
-        card.classList.remove('q-focused', 'q-blurred');
-      }
-    });
-  }
-
-  // Throttle the scroll handler with requestAnimationFrame to avoid layout
-  // thrashing on every pixel scrolled.
-  let ticking = false;
-  window.addEventListener('scroll', () => {
-    if (!ticking) {
-      requestAnimationFrame(() => { applyScrollFocus(); ticking = false; });
-      ticking = true;
-    }
-  }, { passive: true });
-
-  applyScrollFocus(); // Apply once on load before any scrolling happens.
+  updateSidebarButtons();
+  updateSectionTabs();
 }
 
 /**
- * Fetches the question list from the API and renders the test form.
- * If savedAnswers are provided (from a reload-recovery session), the matching
- * radio buttons are re-checked so the participant does not lose their progress.
+ * Records the chosen option, updates tile styling, then refreshes progress.
+ * Uses the `selectedAnswers` map so answers persist across question navigation
+ * without requiring all radio inputs to remain in the DOM simultaneously.
+ */
+function onOptionChange(qId, opt) {
+  selectedAnswers[qId] = opt;
+
+  // Deselect all tiles for this question, then select the chosen one.
+  ['A','B','C','D'].forEach(o => {
+    document.getElementById(`qopt_${qId}_${o}`)?.classList.remove('q-selected');
+  });
+  document.getElementById(`qopt_${qId}_${opt}`)?.classList.add('q-selected');
+
+  updateAnsweredProgress();
+}
+
+/** Navigates to the question at global index `idx`. */
+function goToQuestion(idx) {
+  if (idx < 0 || idx >= questions.length) return;
+  showQuestion(idx);
+}
+
+/** Jumps to the first question in the given section. */
+function jumpToSection(section) {
+  const idx = questions.findIndex(q => q.section === section);
+  if (idx !== -1) goToQuestion(idx);
+}
+
+/* ── Question loading ──────────────────────────────────────────────────────── */
+
+/**
+ * Fetches questions from the API, builds the sidebar and tab bar, then shows
+ * the first question. If savedAnswers are provided (from reload recovery), they
+ * are restored into `selectedAnswers` before rendering so the participant does
+ * not lose progress across page reloads.
  */
 async function loadQuestions(savedAnswers = null) {
   try {
     questions = (await api('/api/questions')) || [];
     const form = document.getElementById('testForm');
+
     if (!questions.length) {
-      form.innerHTML = `<div class="card p-8 text-center"><h2 class="text-xl font-black">No questions available</h2><p class="text-slate-500 mt-2">Please contact the administrator.</p></div>`;
+      form.innerHTML = `
+        <div class="card p-8 text-center">
+          <h2 class="text-xl font-black">No questions available</h2>
+          <p class="text-slate-500 mt-2">Please contact the administrator.</p>
+        </div>`;
       return;
     }
 
-    // Render each section in canonical order, then append any "Other" questions
-    // that do not belong to a known section.
-    let startIndex = 0;
-    form.innerHTML = sectionOrder.map(section => {
-      const sectionQuestions = questions.filter(q => q.section === section);
-      const html = renderSection(section, sectionQuestions, startIndex);
-      startIndex += sectionQuestions.length;
-      return html;
-    }).join('') + renderSection('Other Questions', questions.filter(q => !sectionOrder.includes(q.section)), startIndex);
+    buildSidebarAndTabs();
 
-    // Restore previously selected answers after a page reload.
+    // Restore answers from reload checkpoint before the first render.
     if (savedAnswers) {
       savedAnswers.forEach(a => {
-        if (!a.selected_option) return;
-        const input = document.querySelector(`input[name="q_${a.question_id}"][value="${a.selected_option}"]`);
-        if (input) input.checked = true;
+        if (a.selected_option) selectedAnswers[a.question_id] = a.selected_option;
       });
     }
 
     updateAnsweredProgress();
-    initFocusMode();
+    showQuestion(0);
   } catch (err) {
     setMessage('message', err.message, true);
   }
 }
 
+/* ── Timer ─────────────────────────────────────────────────────────────────── */
+
 /**
- * Starts the countdown timer.
- * The server's authoritative start time is stored in localStorage so the clock
- * survives page reloads without resetting. If the stored time is stale
- * (the duration has already elapsed) a fresh start time is written instead.
+ * Starts the countdown timer. The server's authoritative start time is stored
+ * in localStorage so the clock survives page reloads without resetting.
  */
 function startTimer() {
   const stored   = localStorage.getItem('test_start_time');
   const storedMs = stored ? parseInt(stored, 10) : NaN;
   const isStale  = !stored || isNaN(storedMs) || (Date.now() - storedMs) >= DURATION * 1000;
-  if (isStale) {
-    localStorage.setItem('test_start_time', Date.now().toString());
-  }
+  if (isStale) localStorage.setItem('test_start_time', Date.now().toString());
+
   const startTime = parseInt(localStorage.getItem('test_start_time'), 10);
 
   function tick() {
@@ -248,111 +312,107 @@ function startTimer() {
     const timer     = document.getElementById('timer');
     if (timer) {
       timer.textContent = `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
-      // Add a pulse animation when 5 minutes or fewer remain to draw attention.
+      // Pulse animation when ≤ 5 minutes remain.
       if (remaining <= 300) timer.parentElement.classList.add('animate-pulse');
     }
-    if (remaining <= 0) {
-      clearInterval(interval);
-      submitTest(true); // Auto-submit when time runs out.
-    }
+    if (remaining <= 0) { clearInterval(interval); submitTest(true); }
   }
 
-  tick(); // Paint the correct time immediately without waiting for the first interval tick.
+  tick();
   const interval = setInterval(tick, 1000);
 }
 
+/* ── Submission ────────────────────────────────────────────────────────────── */
+
 /**
- * Submits the test.
- * When auto=true the submission happens silently (no confirmation dialog).
- * When auto=false the participant must confirm before answers are sent.
- * After a successful submission the test form is replaced with a thank-you message
- * and localStorage is cleaned up so the participant cannot resume.
+ * Collects all answers from `selectedAnswers` (not the DOM) and submits.
+ * auto=true skips the confirmation dialog (used by the timer auto-submit).
  */
 async function submitTest(auto = false) {
-  if (submitted) return; // Guard against double-submission (e.g. timer and manual click).
+  if (submitted) return;
   if (!auto) {
-    const confirmSubmit = await showConfirm('Submit your test now? You cannot change answers after submission.', 'Submit Test', 'Submit');
-    if (!confirmSubmit) return;
+    const ok = await showConfirm(
+      'Submit your test now? You cannot change answers after submission.',
+      'Submit Test', 'Submit'
+    );
+    if (!ok) return;
   }
   submitted = true;
 
   const participantId = Number(localStorage.getItem('participant_id'));
-  const answers = questions.map(q => {
-    const selected = document.querySelector(`input[name="q_${q.id}"]:checked`);
-    return { question_id: q.id, selected_option: selected ? selected.value : '' };
-  });
+  const answers = questions.map(q => ({
+    question_id:     q.id,
+    selected_option: selectedAnswers[q.id] || '',
+  }));
 
   try {
     await api('/api/submit-test', {
       method: 'POST',
-      body: JSON.stringify({ participant_id: participantId, answers }),
+      body:   JSON.stringify({ participant_id: participantId, answers }),
     });
 
-    _isActiveTab = false; // Release the single-tab lock so other tabs are not blocked.
+    _isActiveTab = false;
     localStorage.removeItem('participant_id');
     localStorage.removeItem('test_start_time');
 
-    // Replace the entire page body with a thank-you screen so the participant
-    // cannot scroll back to the questions.
     document.body.innerHTML = `
-      <div class="min-h-screen flex items-center justify-center p-6">
+      <div class="min-h-screen flex items-center justify-center p-6"
+           style="background:#0f172a">
         <div class="glass-card p-8 max-w-lg text-center">
           <img src="assets/logo-icon.png" alt="DAES logo" class="logo-icon mx-auto">
           <h1 class="text-3xl font-black text-green-700 mt-5">Thank You for Participating</h1>
           <p class="text-slate-600 mt-3 leading-relaxed">Your answers have been submitted successfully. Please wait for good news from the administrator.</p>
-          <div class="rounded-2xl bg-green-50 border border-green-100 p-4 mt-6 text-green-800 font-bold">Your result will be reviewed and announced by the administrator.</div>
+          <div class="rounded-2xl bg-green-50 border border-green-100 p-4 mt-6 text-green-800 font-bold">
+            Your result will be reviewed and announced by the administrator.
+          </div>
           <a href="index.html" class="btn inline-flex mt-6">Back to Home</a>
         </div>
       </div>`;
   } catch (err) {
-    submitted = false; // Allow retry if the network request failed.
+    submitted = false;
     setMessage('message', err.message, true);
   }
 }
 
 document.getElementById('submitBtn')?.addEventListener('click', () => submitTest(false));
 
-// Prevent participants from copying question or answer text.
 document.addEventListener('copy',        e => { e.preventDefault(); });
 document.addEventListener('contextmenu', e => { e.preventDefault(); });
 
+/* ── Beacon auto-submit (tab close / navigation away) ─────────────────────── */
+
 /**
- * Packages the current answers and fires them via navigator.sendBeacon so they
- * are delivered reliably even while the page is being torn down (tab close, refresh,
- * navigation away). sendBeacon queues the request at the OS level; the browser
- * completes it in the background after the page is gone.
- *
- * A sessionStorage checkpoint is saved BEFORE the beacon so that on the next
- * page load (a reload, not a close) the app can detect what happened and cancel
- * the submission via /api/cancel-submission. sessionStorage survives reloads
- * within the same tab but is wiped on a true close — that asymmetry is how
- * reload vs. close is distinguished.
+ * Fires the answers via sendBeacon so they are delivered even while the page
+ * tears down. Reads from `selectedAnswers` rather than the DOM so all answers
+ * are captured regardless of which question is currently displayed.
+ * A sessionStorage checkpoint is written before the beacon so that the next
+ * page load (a reload) can cancel the submission and restore answers.
  */
 function autoSubmitViaBeacon() {
   const participantId = Number(localStorage.getItem('participant_id'));
   if (!participantId || questions.length === 0) return;
 
-  const answers = questions.map(q => {
-    const sel = document.querySelector(`input[name="q_${q.id}"]:checked`);
-    return { question_id: q.id, selected_option: sel ? sel.value : '' };
-  });
+  const answers = questions.map(q => ({
+    question_id:     q.id,
+    selected_option: selectedAnswers[q.id] || '',
+  }));
 
-  // Write the checkpoint before the beacon so the cancel handler can read it
-  // even if the beacon arrives at the server before the reload finishes.
+  // Checkpoint before beacon so the cancel handler can read it on reload.
   sessionStorage.setItem('_testSession', JSON.stringify({ participantId, answers }));
 
   const payload = JSON.stringify({ participant_id: participantId, answers });
   if (navigator.sendBeacon) {
     navigator.sendBeacon('/api/submit-test', new Blob([payload], { type: 'application/json' }));
   } else {
-    // Fallback for browsers that do not support sendBeacon (very rare in 2024+).
-    fetch('/api/submit-test', { method: 'POST', body: payload, headers: { 'Content-Type': 'application/json' }, keepalive: true });
+    fetch('/api/submit-test', {
+      method: 'POST', body: payload,
+      headers: { 'Content-Type': 'application/json' }, keepalive: true,
+    });
   }
 }
 
 /**
  * Cancels an auto-submission made within the last 60 seconds.
- * Called on page reload to undo the beacon that fired on the previous pagehide.
  * Retries up to 3 times with 400 ms gaps to survive the race between the
  * sendBeacon arriving at the server and this cancellation request.
  */
@@ -373,55 +433,47 @@ async function cancelAutoSubmit(participantId) {
   return false;
 }
 
-// Show the browser's native "leave page?" dialog while the test is active.
-// This gives the participant a chance to cancel accidental closes.
+// Warn the participant before leaving while the test is active.
 window.addEventListener('beforeunload', e => {
-  if (!submitted) {
-    e.preventDefault();
-    e.returnValue = '';
-  }
+  if (!submitted) { e.preventDefault(); e.returnValue = ''; }
 });
 
-// Auto-submit when the participant leaves. pagehide fires after the participant
-// confirms (or ignores) the beforeunload dialog, so the beacon is sent even if
-// the participant clicks "Leave". On mobile browsers that skip the dialog it
-// fires immediately and is the only submission mechanism.
+// Auto-submit when the participant confirms "Leave" or on mobile without dialog.
 window.addEventListener('pagehide', () => {
   if (!submitted) autoSubmitViaBeacon();
 });
 
+/* ── Entry point ───────────────────────────────────────────────────────────── */
+
 /**
- * Entry point — called by the fullscreen prompt button in test.html after the
- * participant enters fullscreen. Defined as a plain async function (not a
- * self-invoking IIFE) so the fullscreen gate can call it at the right moment.
+ * Called by the fullscreen prompt button after the participant enters fullscreen.
+ * Handles reload recovery (cancels the pagehide beacon, restores answers), checks
+ * for already-submitted state, enforces single-tab lock, syncs the timer, then
+ * loads questions and starts the countdown.
  */
 async function initTest() {
   const participantId = localStorage.getItem('participant_id');
+  if (!participantId) { window.location.href = 'index.html'; return; }
 
-  // No participant in storage — redirect to the start of the flow.
-  if (!participantId) {
-    window.location.href = 'index.html';
-    return;
-  }
-
-  // ── Reload recovery ────────────────────────────────────────────────────────
-  // pagehide fires on both reload and tab close. We distinguish them using
-  // sessionStorage: it survives a reload within the same tab but is wiped on
-  // close. If the checkpoint is present AND this is a reload, cancel the
-  // auto-submission that fired on the previous pagehide and restore answers.
+  // ── Reload recovery ──────────────────────────────────────────────────────────
+  // pagehide fires on both reload and close. sessionStorage survives reload but
+  // is wiped on close — that asymmetry lets us cancel the beacon on reload only.
   const navType    = performance.getEntriesByType?.('navigation')?.[0]?.type;
   const sessionRaw = sessionStorage.getItem('_testSession');
+  let savedAnswersForRestore = null;
+
   if (navType === 'reload' && sessionRaw) {
     try {
       const session = JSON.parse(sessionRaw);
       if (session.participantId === Number(participantId)) {
         await cancelAutoSubmit(session.participantId);
+        savedAnswersForRestore = session.answers; // Restore answers after cancel.
       }
     } catch { /* Malformed checkpoint — ignore. */ }
     sessionStorage.removeItem('_testSession');
   }
 
-  // Block the test if this participant has already submitted.
+  // Block if the participant has already submitted.
   try {
     const status = await api(`/api/submission-status/${participantId}`);
     if (status.submitted) {
@@ -435,15 +487,14 @@ async function initTest() {
           <a href="index.html" class="btn inline-flex mt-6">Back to Home</a>
         </div>`;
       document.getElementById('submitBtn')?.setAttribute('disabled', 'true');
-      submitted = true; // Disables the beforeunload guard for a clean exit.
+      submitted = true;
       return;
     }
   } catch {
-    // If the status check fails, fall through and allow the test to load.
-    // This prevents a network blip from locking the participant out.
+    // Status check failed — fall through and allow the test to load.
   }
 
-  // Block duplicate tabs — only one tab per participant may run the test.
+  // Block duplicate tabs.
   const tabAllowed = await acquireTabLock();
   if (!tabAllowed) {
     document.getElementById('testForm').innerHTML = `
@@ -453,27 +504,22 @@ async function initTest() {
         <p class="text-slate-500 mt-3 leading-relaxed">This test is already open in another tab or window. Please close this tab and continue in your original tab.</p>
       </div>`;
     document.getElementById('submitBtn')?.setAttribute('disabled', 'true');
-    submitted = true; // Disables the beforeunload guard on this blocked tab.
+    submitted = true;
     return;
   }
 
-  // Synchronise the timer with the server.
-  // The server records started_at on the first call and returns the same
-  // seconds_remaining on every subsequent call, so all tabs and reloads
-  // for the same participant always show identical remaining time.
+  // Synchronise the timer with the server so all reloads show identical time.
   try {
     const startData = await api('/api/start-test', {
       method: 'POST',
       body:   JSON.stringify({ participant_id: Number(participantId) }),
     });
-    // Back-calculate the local start time from the server's remaining seconds
-    // so the local timer stays in sync even across network delays.
     const seededStart = Date.now() - (DURATION - startData.seconds_remaining) * 1000;
     localStorage.setItem('test_start_time', seededStart.toString());
   } catch {
-    // Network error — fall through and use the localStorage value or start fresh.
+    // Network error — use localStorage value or start fresh.
   }
 
-  loadQuestions();
+  loadQuestions(savedAnswersForRestore);
   startTimer();
 }
