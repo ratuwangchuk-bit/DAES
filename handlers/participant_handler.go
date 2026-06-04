@@ -158,10 +158,13 @@ func ValidateCID(w http.ResponseWriter, r *http.Request) {
 
 	// Prevent a participant who already submitted from starting a second attempt.
 	var submitted bool
-	config.DB.QueryRow(
+	if err := config.DB.QueryRow(
 		"SELECT EXISTS(SELECT 1 FROM submissions WHERE participant_id=$1)",
 		participantID,
-	).Scan(&submitted)
+	).Scan(&submitted); err != nil {
+		utils.Error(w, http.StatusInternalServerError, "Could not verify submission status")
+		return
+	}
 	if submitted {
 		utils.Error(w, http.StatusConflict, "This CID has already completed the test. Please contact the administrator.")
 		return
@@ -169,10 +172,13 @@ func ValidateCID(w http.ResponseWriter, r *http.Request) {
 
 	// Link the passcode to the participant so the test page can watch for expiry.
 	if req.PasscodeID > 0 {
-		config.DB.Exec(
+		if _, err := config.DB.Exec(
 			"UPDATE participants SET passcode_id=$1 WHERE id=$2",
 			req.PasscodeID, participantID,
-		)
+		); err != nil {
+			utils.Error(w, http.StatusInternalServerError, "Could not link passcode")
+			return
+		}
 	}
 
 	utils.JSON(w, http.StatusOK, map[string]interface{}{

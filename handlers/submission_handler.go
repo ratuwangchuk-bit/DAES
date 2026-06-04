@@ -81,7 +81,7 @@ func SubmitTest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch correct answers for all submitted question IDs in a single query
-	// rather than one query per answer. Under 45 answers this avoids 44 extra
+	// rather than one query per answer. Under 48 answers this avoids 47 extra
 	// round-trips to the database — important for reliability under concurrent load.
 	answerMap := make(map[int]answerKey, len(req.Answers))
 	qIDs := make([]int, 0, len(req.Answers))
@@ -111,6 +111,8 @@ func SubmitTest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Score each submitted answer and collect them for the bulk insert below.
+	// Unanswered questions (empty selected_option) are stored with is_correct=false
+	// so the admin answer sheet always shows all 48 questions.
 	score, analyticalScore, verbalScore, quantitativeScore := 0, 0, 0, 0
 
 	type scoredAnswer struct {
@@ -118,37 +120,36 @@ func SubmitTest(w http.ResponseWriter, r *http.Request) {
 		selected   string
 		isCorrect  bool
 	}
-	validAnswers := make([]scoredAnswer, 0, len(req.Answers))
+	allAnswers := make([]scoredAnswer, 0, len(req.Answers))
 
 	for _, ans := range req.Answers {
 		selected := strings.ToUpper(strings.TrimSpace(ans.SelectedOption))
-		// Skip answers with invalid option values (e.g. empty string for unanswered).
-		if selected != "A" && selected != "B" && selected != "C" && selected != "D" {
-			continue
-		}
 		key := answerMap[ans.QuestionID]
-		isCorrect := key.correct != "" && key.correct == selected
-		if isCorrect {
-			score++
-			switch key.section {
-			case "Analytical Ability":
-				analyticalScore++
-			case "Verbal Ability":
-				verbalScore++
-			case "Quantitative Skills":
-				quantitativeScore++
+		isCorrect := false
+		if selected == "A" || selected == "B" || selected == "C" || selected == "D" {
+			isCorrect = key.correct != "" && key.correct == selected
+			if isCorrect {
+				score++
+				switch key.section {
+				case "Analytical Ability":
+					analyticalScore++
+				case "Verbal Ability":
+					verbalScore++
+				case "Quantitative Skills":
+					quantitativeScore++
+				}
 			}
 		}
-		validAnswers = append(validAnswers, scoredAnswer{ans.QuestionID, selected, isCorrect})
+		allAnswers = append(allAnswers, scoredAnswer{ans.QuestionID, selected, isCorrect})
 	}
 
 	// Build a single multi-row INSERT for all participant_answers rather than
-	// executing 45 individual statements. This keeps the transaction open for
+	// executing 48 individual statements. This keeps the transaction open for
 	// the shortest possible time, reducing contention under concurrent submissions.
-	if len(validAnswers) > 0 {
-		placeholders := make([]string, len(validAnswers))
-		args := make([]any, 0, len(validAnswers)*4)
-		for i, a := range validAnswers {
+	if len(allAnswers) > 0 {
+		placeholders := make([]string, len(allAnswers))
+		args := make([]any, 0, len(allAnswers)*4)
+		for i, a := range allAnswers {
 			base := i * 4
 			placeholders[i] = fmt.Sprintf("($%d,$%d,$%d,$%d)", base+1, base+2, base+3, base+4)
 			args = append(args, submissionID, a.questionID, a.selected, a.isCorrect)
@@ -200,14 +201,21 @@ func GetSubmissionDetail(w http.ResponseWriter, r *http.Request) {
 
 	var detail models.SubmissionDetail
 	err := config.DB.QueryRow(`
-		SELECT s.id, p.id, p.full_name, p.cid_number, p.company_name, p.contact_number,
-		       s.score, s.total_questions,
-		       COALESCE(s.analytical_score,0), COALESCE(s.verbal_score,0), COALESCE(s.quantitative_score,0),
-		       s.percentage,
-		       DENSE_RANK() OVER (ORDER BY s.score DESC) AS rank,
-		       to_char(s.submitted_at, 'YYYY-MM-DD HH24:MI') AS submitted_at
-		FROM submissions s JOIN participants p ON s.participant_id=p.id
-		WHERE s.id=$1`,
+		SELECT id, pid, full_name, cid_number, company_name, contact_number,
+		       score, total_questions, analytical_score, verbal_score, quantitative_score,
+		       percentage, rank, submitted_at
+		FROM (
+			SELECT s.id, p.id AS pid, p.full_name, p.cid_number, p.company_name, p.contact_number,
+			       s.score, s.total_questions,
+			       COALESCE(s.analytical_score,0) AS analytical_score,
+			       COALESCE(s.verbal_score,0)     AS verbal_score,
+			       COALESCE(s.quantitative_score,0) AS quantitative_score,
+			       s.percentage,
+			       DENSE_RANK() OVER (ORDER BY s.score DESC) AS rank,
+			       to_char(s.submitted_at, 'YYYY-MM-DD HH24:MI') AS submitted_at
+			FROM submissions s JOIN participants p ON s.participant_id=p.id
+		) ranked
+		WHERE id=$1`,
 		id,
 	).Scan(
 		&detail.SubmissionID, &detail.ParticipantID, &detail.FullName, &detail.CIDNumber,

@@ -190,10 +190,10 @@ function renderSectionChart(rows) {
   ];
   el.innerHTML = sections.map(({ label, key, cls }) => {
     const avg     = rows.reduce((sum, r) => sum + Number(r[key] || 0), 0) / n;
-    const percent = Math.min(100, (avg / 15) * 100);
+    const percent = Math.min(100, (avg / 16) * 100);
     return `
       <div class="chart-row">
-        <div class="chart-row-head"><span>${label}</span><b>${avg.toFixed(1)}/15</b></div>
+        <div class="chart-row-head"><span>${label}</span><b>${avg.toFixed(1)}/16</b></div>
         <div class="bar-track"><span class="bar-fill ${cls}" style="width:${percent}%"></span></div>
       </div>`;
   }).join('');
@@ -277,9 +277,9 @@ function renderResults(rows) {
           <td class="text-center"><span class="serial-badge">${i + 1}</span></td>
           <td><b>${escapeHtml(r.full_name)}</b><div class="text-xs text-slate-500 mt-1">CID: ${escapeHtml(r.cid_number || '-')}</div></td>
           <td><span class="score-badge total">${r.score}/${r.total_questions || 48}</span></td>
-          <td><span class="score-badge analytical">${r.analytical_score}/15</span></td>
-          <td><span class="score-badge verbal">${r.verbal_score}/15</span></td>
-          <td><span class="score-badge quantitative">${r.quantitative_score}/15</span></td>
+          <td><span class="score-badge analytical">${r.analytical_score}/16</span></td>
+          <td><span class="score-badge verbal">${r.verbal_score}/16</span></td>
+          <td><span class="score-badge quantitative">${r.quantitative_score}/16</span></td>
           <td><span class="rank-badge">${r.rank}</span></td>
           <td>${escapeHtml(r.company_name || '-')}</td>
           <td>${escapeHtml(r.contact_number || '-')}</td>
@@ -406,9 +406,9 @@ function showResultDetailModal(d) {
       </div>
       <div class="rd-scores">
         <div class="rd-score-item total"><span>Total</span><b>${d.score}/${d.total_questions || 48}</b></div>
-        <div class="rd-score-item analytical"><span>Analytical</span><b>${d.analytical_score}/15</b></div>
-        <div class="rd-score-item verbal"><span>Verbal</span><b>${d.verbal_score}/15</b></div>
-        <div class="rd-score-item quantitative"><span>Quantitative</span><b>${d.quantitative_score}/15</b></div>
+        <div class="rd-score-item analytical"><span>Analytical</span><b>${d.analytical_score}/16</b></div>
+        <div class="rd-score-item verbal"><span>Verbal</span><b>${d.verbal_score}/16</b></div>
+        <div class="rd-score-item quantitative"><span>Quantitative</span><b>${d.quantitative_score}/16</b></div>
         <div class="rd-score-item pct"><span>Score %</span><b>${pct}%</b></div>
         <div class="rd-score-item rank"><span>Rank</span><b>#${d.rank}</b></div>
       </div>
@@ -505,9 +505,9 @@ function downloadIndividualResult() {
   </div>
   <div class="scores">
     <div class="si total"><span class="lbl">Total Score</span><span class="val">${d.score}/${d.total_questions || 48}</span></div>
-    <div class="si ana"><span class="lbl">Analytical</span><span class="val">${d.analytical_score}/15</span></div>
-    <div class="si ver"><span class="lbl">Verbal</span><span class="val">${d.verbal_score}/15</span></div>
-    <div class="si qnt"><span class="lbl">Quantitative</span><span class="val">${d.quantitative_score}/15</span></div>
+    <div class="si ana"><span class="lbl">Analytical</span><span class="val">${d.analytical_score}/16</span></div>
+    <div class="si ver"><span class="lbl">Verbal</span><span class="val">${d.verbal_score}/16</span></div>
+    <div class="si qnt"><span class="lbl">Quantitative</span><span class="val">${d.quantitative_score}/16</span></div>
     <div class="si pct"><span class="lbl">Score %</span><span class="val">${pct}%</span></div>
     <div class="si rnk"><span class="lbl">Rank</span><span class="val">#${d.rank}</span></div>
   </div>
@@ -550,9 +550,9 @@ function printAllResults() {
       <td>${escapeHtml(r.company_name || '—')}</td>
       <td>${escapeHtml(r.contact_number || '—')}</td>
       <td class="c stotal" style="color:${scoreCol}">${r.score}/${total}</td>
-      <td class="c">${r.analytical_score}/15</td>
-      <td class="c">${r.verbal_score}/15</td>
-      <td class="c">${r.quantitative_score}/15</td>
+      <td class="c">${r.analytical_score}/16</td>
+      <td class="c">${r.verbal_score}/16</td>
+      <td class="c">${r.quantitative_score}/16</td>
       <td class="c pct" style="color:${scoreCol}">${pct}%</td>
     </tr>`;
   }).join('');
@@ -734,9 +734,9 @@ function printAllResults() {
         <th>Company</th>
         <th>Contact</th>
         <th class="c">Total<br>/48</th>
-        <th class="c">Analytical<br>/15</th>
-        <th class="c">Verbal<br>/15</th>
-        <th class="c">Quantitative<br>/15</th>
+        <th class="c">Analytical<br>/16</th>
+        <th class="c">Verbal<br>/16</th>
+        <th class="c">Quantitative<br>/16</th>
         <th class="c">Score %</th>
       </tr>
     </thead>

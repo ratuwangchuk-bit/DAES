@@ -15,10 +15,24 @@ import (
 	"digital-aptitude-evaluation-system/utils"
 )
 
-// GetQuestions returns exactly 15 random questions per section for the participant test.
+// GetQuestions returns exactly 16 random questions per section for the participant test.
 // The three UNION ALL sub-selects each draw from a single section so the mix is
 // always balanced regardless of how many questions exist per section in the database.
 func GetQuestions(w http.ResponseWriter, r *http.Request) {
+	// Ensure each section has at least 16 questions before presenting the test.
+	var minCount int
+	if err := config.DB.QueryRow(`
+		SELECT MIN(cnt) FROM (
+			SELECT COUNT(*) AS cnt FROM questions WHERE section='Analytical Ability'
+			UNION ALL
+			SELECT COUNT(*) FROM questions WHERE section='Verbal Ability'
+			UNION ALL
+			SELECT COUNT(*) FROM questions WHERE section='Quantitative Skills'
+		) t`).Scan(&minCount); err != nil || minCount < 16 {
+		utils.Error(w, http.StatusServiceUnavailable, "The question bank is not ready. Please contact the administrator.")
+		return
+	}
+
 	rows, err := config.DB.Query(`
 		(SELECT id, section, question_text, option_a, option_b, option_c, option_d
 		 FROM questions WHERE section='Analytical Ability'  ORDER BY random() LIMIT 16)

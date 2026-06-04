@@ -67,7 +67,7 @@ func ExportResults(w http.ResponseWriter, r *http.Request) {
 
 	headers := []string{
 		"Rank", "Full Name", "CID Number", "Company", "Contact Number",
-		"Total Score (/45)", "Analytical (/15)", "Verbal (/15)", "Quantitative (/15)",
+		"Total Score (/48)", "Analytical (/16)", "Verbal (/16)", "Quantitative (/16)",
 		"Percentage (%)", "Submitted At (BST)",
 	}
 	for i, h := range headers {

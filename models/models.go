@@ -67,7 +67,7 @@ type SelectedAnswer struct {
 
 // SubmitTestRequest is the JSON body sent by the test page when a participant
 // submits. ParticipantID identifies who is submitting; Answers contains one
-// entry per question that was presented (45 total).
+// entry per question that was presented (48 total).
 type SubmitTestRequest struct {
 	ParticipantID int              `json:"participant_id"`
 	Answers       []SelectedAnswer `json:"answers"`
