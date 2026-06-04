@@ -111,13 +111,14 @@ func SubmitTest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Score each submitted answer and collect them for the bulk insert below.
-	// Unanswered questions (empty selected_option) are stored with is_correct=false
-	// so the admin answer sheet always shows all 48 questions.
+	// Unanswered questions are stored as NULL in selected_option (satisfies the DB
+	// CHECK constraint which only allows 'A'–'D' or NULL) so the admin answer sheet
+	// always shows all 48 rows, including skipped ones.
 	score, analyticalScore, verbalScore, quantitativeScore := 0, 0, 0, 0
 
 	type scoredAnswer struct {
 		questionID int
-		selected   string
+		selected   any // nil for unanswered; "A"/"B"/"C"/"D" for answered
 		isCorrect  bool
 	}
 	allAnswers := make([]scoredAnswer, 0, len(req.Answers))
@@ -126,7 +127,9 @@ func SubmitTest(w http.ResponseWriter, r *http.Request) {
 		selected := strings.ToUpper(strings.TrimSpace(ans.SelectedOption))
 		key := answerMap[ans.QuestionID]
 		isCorrect := false
+		var selVal any // nil = unanswered → stored as SQL NULL
 		if selected == "A" || selected == "B" || selected == "C" || selected == "D" {
+			selVal = selected
 			isCorrect = key.correct != "" && key.correct == selected
 			if isCorrect {
 				score++
@@ -140,7 +143,7 @@ func SubmitTest(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
-		allAnswers = append(allAnswers, scoredAnswer{ans.QuestionID, selected, isCorrect})
+		allAnswers = append(allAnswers, scoredAnswer{ans.QuestionID, selVal, isCorrect})
 	}
 
 	// Build a single multi-row INSERT for all participant_answers rather than
@@ -232,7 +235,8 @@ func GetSubmissionDetail(w http.ResponseWriter, r *http.Request) {
 	// detail panel groups questions consistently regardless of submission order.
 	rows, err := config.DB.Query(`
 		SELECT q.id, q.section, q.question_text, q.option_a, q.option_b, q.option_c, q.option_d,
-		       pa.selected_option, COALESCE(a.correct_option, '') AS correct_option, pa.is_correct
+		       COALESCE(pa.selected_option, '') AS selected_option,
+		       COALESCE(a.correct_option, '')   AS correct_option, pa.is_correct
 		FROM participant_answers pa
 		JOIN questions q ON pa.question_id = q.id
 		LEFT JOIN answers a ON a.question_id = q.id
